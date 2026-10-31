@@ -21,6 +21,7 @@ import json
 import os
 import platform
 import random
+import shutil
 import subprocess
 import sys
 import time
@@ -47,9 +48,10 @@ from data_split import build_split, split_fingerprint
 # @@KERNEL_EMBED@@
 
 ROOT = Path(__file__).resolve().parents[1]
-_HERE = Path(__file__).resolve().parent
 _INJECTED = globals().get("_KERNEL_SOURCE_SHA256")
 source_sha = _INJECTED if _INJECTED else source_sha256(ROOT)
+# Kaggle script kernel 的代码位于只读 /kaggle/src；可写工作区固定为 /kaggle/working。
+WORK = Path("/kaggle/working") if _INJECTED else ROOT
 
 MEAN = (0.485, 0.456, 0.406)
 STD = (0.229, 0.224, 0.225)
@@ -350,7 +352,7 @@ def evaluate(model, loader, device, criterion, num_classes, collect=False, limit
             0, flat_index.cpu(), torch.ones(batch, dtype=torch.long)
         )
         true_probs = probs.gather(1, labels.unsqueeze(1)).squeeze(1)
-        truep_sum += true_probs.double().cpu()
+        truep_sum.index_add_(0, labels.cpu(), true_probs.double().cpu())
         if collect:
             pred_probs = probs.gather(1, preds.unsqueeze(1)).squeeze(1)
             for row in range(batch):
@@ -560,8 +562,7 @@ def collect_provenance():
 
 
 def ensure_meta():
-    base = _HERE if _INJECTED else ROOT
-    meta = base / "data" / "meta.csv"
+    meta = WORK / "data" / "meta.csv"
     if not meta.exists():
         payload = globals().get("_KERNEL_META_B85")
         if not payload:
@@ -588,11 +589,29 @@ def resolve_images_dir(data_root):
         root / "data" / "raw" / "jpg",
         root / "data" / "raw",
     ]
+    if _INJECTED:
+        candidates.append(Path("/kaggle/input"))
     for candidate in candidates:
         if (candidate / "image_00001.jpg").is_file():
             return candidate
-    for found in root.rglob("image_00001.jpg"):
-        return found.parent
+
+    search_roots = [root]
+    if _INJECTED:
+        search_roots.append(Path("/kaggle/input"))
+    for base in search_roots:
+        if base.is_dir():
+            for found in base.rglob("image_00001.jpg"):
+                return found.parent
+
+    if _INJECTED:
+        base = Path("/kaggle/input")
+        print(
+            f"[debug] {base} exists={base.exists()} is_dir={base.is_dir()}",
+            file=sys.stderr,
+        )
+        if base.is_dir():
+            for child in sorted(base.iterdir()):
+                print(f"[debug] input/{child.name}", file=sys.stderr)
     raise SystemExit(f"找不到 image_00001.jpg（数据根 {root}）")
 
 
@@ -888,6 +907,19 @@ def _write_summary(path, payload):
     tmp.replace(path)
 
 
+def mirror_smoke_output(cfg, mode):
+    """kernel 冒烟产物落在 /tmp，需镜像到工作目录 runs/<mode> 方可取回。"""
+    if not _INJECTED or not cfg["smoke"]:
+        return
+    source = Path(cfg["out"])
+    target = Path("runs") / mode
+    target.mkdir(parents=True, exist_ok=True)
+    for name in ARTIFACTS:
+        src = source / name
+        if src.is_file():
+            shutil.copy2(src, target / name)
+
+
 def run_all(modes, args, img_dir, split, env):
     """kernel run_all：逐 mode 更新 summary.json，failed 即非零退出。"""
     summary_path = Path("runs") / "summary.json"
@@ -932,8 +964,10 @@ def run_all(modes, args, img_dir, split, env):
             out_dir = Path(cfg["out"])
             if all((out_dir / name).is_file() for name in ARTIFACTS):
                 statuses[mode] = "skipped"
+                mirror_smoke_output(cfg, mode)
             else:
                 run_one(cfg, args, img_dir, split, env)
+                mirror_smoke_output(cfg, mode)
                 statuses[mode] = "ok"
         except Exception as exc:  # noqa: BLE001 - 记录后继续其它 mode
             statuses[mode] = "failed"
@@ -963,7 +997,7 @@ def main(argv=None):
     args = parser.parse_args(argv)
 
     if _INJECTED:
-        os.chdir(_HERE)
+        os.chdir(WORK)
 
     meta = ensure_meta()
     split = load_split(meta)

@@ -40,8 +40,12 @@ KAGGLE_DIR = ROOT / "kaggle" / "flower"
 SMOKE_DIR = ROOT / "kaggle" / "flower-smoke"
 FORMAL_KERNEL = KAGGLE_DIR / "kernel.py"
 SMOKE_KERNEL = SMOKE_DIR / "kernel.py"
+FORMAL_METADATA = KAGGLE_DIR / "kernel-metadata.json"
+SMOKE_METADATA = SMOKE_DIR / "kernel-metadata.json"
 META_CSV = ROOT / "data" / "meta.csv"
 KERNEL_REF = "feisama/flower-102-transfer"
+SMOKE_KERNEL_REF = "feisama/flower-102-smoke"
+SMOKE_TITLE = "Flower 102 Smoke"
 
 SOURCE_ORDER = ("schema", "presets", "data_split", "train_full")
 CROSS_MODULES = ("schema", "presets", "data_split")
@@ -136,7 +140,7 @@ def _embed_block(modes, smoke, source_sha, meta_path):
     lines = [
         f"_KERNEL_MODES = {json.dumps(list(modes))}",
         f"_KERNEL_SMOKE = {bool(smoke)}",
-        f"_KERNEL_REF = {json.dumps(KERNEL_REF)}",
+        f"_KERNEL_REF = {json.dumps(SMOKE_KERNEL_REF if smoke else KERNEL_REF)}",
         f'_KERNEL_META_B85 = "{encoded}"',
         BEGIN,
         f"_KERNEL_PROVENANCE = {provenance!r}",
@@ -357,6 +361,27 @@ def _write_kernel(path, text):
     return 0
 
 
+def _write_smoke_metadata():
+    """冒烟变体使用独立 slug，避免覆盖正式 kernel。"""
+    payload = {
+        "id": SMOKE_KERNEL_REF,
+        "title": SMOKE_TITLE,
+        "code_file": "kernel.py",
+        "language": "python",
+        "kernel_type": "script",
+        "is_private": True,
+        "enable_gpu": False,
+        "enable_internet": True,
+        "dataset_sources": ["trnglbotrn/oxford-102-flowers"],
+        "competition_sources": [],
+        "kernel_sources": [],
+    }
+    path = SMOKE_METADATA
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+    print(f"wrote {path.relative_to(ROOT)}")
+
+
 def _check(path):
     path = Path(path)
     if not path.is_file():
@@ -506,10 +531,17 @@ def main(argv=None):
         unknown = [item for item in modes if item not in schema.CANONICAL_MODES]
         if unknown:
             _fail(f"未知 mode: {unknown}")
-    smoke_variant = args.smoke or (args.modes and modes != list(schema.CANONICAL_MODES))
-    text = generate_text(modes, args.smoke)
+    smoke_variant = bool(
+        args.smoke or (args.modes and modes != list(schema.CANONICAL_MODES))
+    )
+    text = generate_text(modes, smoke_variant)
     destination = SMOKE_KERNEL if smoke_variant else FORMAL_KERNEL
-    return _write_kernel(destination, text)
+    code = _write_kernel(destination, text)
+    if code != 0:
+        return code
+    if smoke_variant:
+        _write_smoke_metadata()
+    return 0
 
 
 if __name__ == "__main__":

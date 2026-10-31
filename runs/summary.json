@@ -1,0 +1,33 @@
+{
+  "kernel_ref": "feisama/flower-102-transfer",
+  "built_source_sha256": "301319b8ff40d474a77a57ded2ed9b495a6c06251b1e308e881d38c3832334ea",
+  "started_at": "2026-10-31T16:22:43+00:00",
+  "finished_at": "2026-10-31T17:00:30+00:00",
+  "gpu": "Tesla T4",
+  "modes": [
+    {
+      "mode": "scratch",
+      "status": "ok",
+      "elapsed_sec": 1350.182202577591,
+      "error": null
+    },
+    {
+      "mode": "frozen",
+      "status": "ok",
+      "elapsed_sec": 122.61377334594727,
+      "error": null
+    },
+    {
+      "mode": "two-stage",
+      "status": "ok",
+      "elapsed_sec": 241.68818283081055,
+      "error": null
+    },
+    {
+      "mode": "strong",
+      "status": "ok",
+      "elapsed_sec": 552.0624508857727,
+      "error": null
+    }
+  ]
+}

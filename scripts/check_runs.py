@@ -233,7 +233,13 @@ def check_env(run_dir, metrics):
     return errors
 
 
-def check_run(run_dir, relaxed=False, check_presets=False, check_env_fields=False):
+def check_run(
+    run_dir,
+    relaxed=False,
+    check_presets=False,
+    check_env_fields=False,
+    allow_smoke=False,
+):
     """对单个 run 目录做全部逐 run 断言，返回错误列表（空=通过）。"""
     run_dir = Path(run_dir)
     errors = []
@@ -265,6 +271,10 @@ def check_run(run_dir, relaxed=False, check_presets=False, check_env_fields=Fals
     selection = metrics["selection"]
     val = metrics["val"]
     test = metrics["test"]
+    smoke_run = run.get("smoke") is True
+    if allow_smoke and smoke_run:
+        # 冒烟 run 只做 1 epoch / 64 张 val/test，数量约束按 relaxed 处理。
+        relaxed = True
 
     def err(message):
         errors.append(f"{run_dir}: {message}")
@@ -283,7 +293,7 @@ def check_run(run_dir, relaxed=False, check_presets=False, check_env_fields=Fals
     if run["is_diag"]:
         if run["tag"] == run["mode"]:
             err("诊断 run 的 tag 不得等于 mode")
-    elif run["tag"] != run["mode"]:
+    elif not (allow_smoke and smoke_run) and run["tag"] != run["mode"]:
         err("预设 run 的 tag 必须等于 mode")
     if run["base"] not in (None, "two-stage"):
         err(f"run.base 非法: {run['base']!r}")
@@ -1097,12 +1107,18 @@ def _selftest():
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description="run 产物契约校验")
-    parser.add_argument("--root", default="runs")
+    parser.add_argument("root_pos", nargs="?", help="runs 根目录（等价于 --root）")
+    parser.add_argument("--root", default=None)
     parser.add_argument("--selftest", action="store_true")
     parser.add_argument("--assert-complete", action="store_true")
     parser.add_argument("--assert-presets", action="store_true")
     parser.add_argument("--assert-env", action="store_true")
     parser.add_argument("--relaxed", action="store_true")
+    parser.add_argument(
+        "--allow-smoke",
+        action="store_true",
+        help="允许 smoke run（1 epoch / 64 张）并自动启用 relaxed 数量约束",
+    )
     parser.add_argument("--dump-schema", action="store_true")
     args = parser.parse_args(argv)
 
@@ -1112,7 +1128,7 @@ def main(argv=None):
     if args.selftest:
         return _selftest()
 
-    root = Path(args.root)
+    root = Path(args.root or args.root_pos or "runs")
     if args.assert_complete:
         errors = assert_complete(root, relaxed=args.relaxed)
     else:
@@ -1127,6 +1143,7 @@ def main(argv=None):
                     relaxed=args.relaxed,
                     check_presets=args.assert_presets,
                     check_env_fields=args.assert_env,
+                    allow_smoke=args.allow_smoke,
                 )
             )
     if errors:

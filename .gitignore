@@ -14,3 +14,4 @@ __pycache__/
 *.pt
 runs/diag/
 kaggle/flower/output/
+kaggle/flower-smoke/
