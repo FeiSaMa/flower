@@ -1,0 +1,14 @@
+{
+  "id": "feisama/flower-102-transfer",
+  "title": "Flower 102 Transfer",
+  "code_file": "kernel.py",
+  "language": "python",
+  "kernel_type": "script",
+  "is_private": true,
+  "enable_gpu": true,
+  "enable_internet": true,
+  "machine_shape": "NvidiaTeslaT4",
+  "dataset_sources": ["trnglbotrn/oxford-102-flowers"],
+  "competition_sources": [],
+  "kernel_sources": []
+}

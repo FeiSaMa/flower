@@ -9,3 +9,8 @@ __pycache__/
 
 # IDE
 .idea/
+
+# 训练产物与 kernel 本地输出（阶段 A）
+*.pt
+runs/diag/
+kaggle/flower/output/
