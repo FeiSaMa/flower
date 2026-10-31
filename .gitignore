@@ -1,0 +1,11 @@
+# 原始数据（体积超 GitHub 限制，按 README 从 Kaggle / 牛津站重建）
+data/raw/*.zip
+data/raw/jpg/
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+
+# IDE
+.idea/
