@@ -1,0 +1,103 @@
+class_idx,label,name
+0,1,pink primrose
+1,2,hard-leaved pocket orchid
+2,3,canterbury bells
+3,4,sweet pea
+4,5,english marigold
+5,6,tiger lily
+6,7,moon orchid
+7,8,bird of paradise
+8,9,monkshood
+9,10,globe thistle
+10,11,snapdragon
+11,12,colt's foot
+12,13,king protea
+13,14,spear thistle
+14,15,yellow iris
+15,16,globe-flower
+16,17,purple coneflower
+17,18,peruvian lily
+18,19,balloon flower
+19,20,giant white arum lily
+20,21,fire lily
+21,22,pincushion flower
+22,23,fritillary
+23,24,red ginger
+24,25,grape hyacinth
+25,26,corn poppy
+26,27,prince of wales feathers
+27,28,stemless gentian
+28,29,artichoke
+29,30,sweet william
+30,31,carnation
+31,32,garden phlox
+32,33,love in the mist
+33,34,mexican aster
+34,35,alpine sea holly
+35,36,ruby-lipped cattleya
+36,37,cape flower
+37,38,great masterwort
+38,39,siam tulip
+39,40,lenten rose
+40,41,barbeton daisy
+41,42,daffodil
+42,43,sword lily
+43,44,poinsettia
+44,45,bolero deep blue
+45,46,wallflower
+46,47,marigold
+47,48,buttercup
+48,49,oxeye daisy
+49,50,common dandelion
+50,51,petunia
+51,52,wild pansy
+52,53,primula
+53,54,sunflower
+54,55,pelargonium
+55,56,bishop of llandaff
+56,57,gaura
+57,58,geranium
+58,59,orange dahlia
+59,60,pink-yellow dahlia
+60,61,cautleya spicata
+61,62,japanese anemone
+62,63,black-eyed susan
+63,64,silverbush
+64,65,californian poppy
+65,66,osteospermum
+66,67,spring crocus
+67,68,bearded iris
+68,69,windflower
+69,70,tree poppy
+70,71,gazania
+71,72,azalea
+72,73,water lily
+73,74,rose
+74,75,thorn apple
+75,76,morning glory
+76,77,passion flower
+77,78,lotus
+78,79,toad lily
+79,80,anthurium
+80,81,frangipani
+81,82,clematis
+82,83,hibiscus
+83,84,columbine
+84,85,desert-rose
+85,86,tree mallow
+86,87,magnolia
+87,88,cyclamen
+88,89,watercress
+89,90,canna lily
+90,91,hippeastrum
+91,92,bee balm
+92,93,ball moss
+93,94,foxglove
+94,95,bougainvillea
+95,96,camellia
+96,97,mallow
+97,98,mexican petunia
+98,99,bromelia
+99,100,blanket flower
+100,101,trumpet creeper
+101,102,blackberry lily
