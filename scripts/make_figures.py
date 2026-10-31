@@ -4,6 +4,7 @@
 matplotlib 使用 Agg 后端；中文字体缺失时自动退化为英文标签。
 """
 
+import csv
 import json
 import sys
 from pathlib import Path
@@ -104,6 +105,14 @@ def load_metrics(runs_dir):
     return metrics, histories
 
 
+def load_class_names(root):
+    path = Path(root) / "data" / "class_names.csv"
+    if not path.is_file():
+        return {}
+    with path.open(encoding="utf-8") as handle:
+        return {int(row["class_idx"]): row["name"] for row in csv.DictReader(handle)}
+
+
 def save(fig, path):
     fig.tight_layout()
     fig.savefig(path, dpi=160, bbox_inches="tight")
@@ -182,6 +191,7 @@ def fig_cm(runs_dir, output):
 
 
 def fig_misclassified(root, output):
+    names = load_class_names(root)
     frame = pd.read_csv(root / "runs" / "two-stage" / "misclassified.csv")
     frame = frame.sort_values(["true_prob", "image_id"], kind="stable").head(
         N_MISCLASSIFIED
@@ -190,24 +200,35 @@ def fig_misclassified(root, output):
     print(f"fig3 image_ids: {image_ids}")
     fig, axes = plt.subplots(2, 5, figsize=(10, 4.8))
     arrow = "→" if CJK_FONT else "->"
+    titles = []
     for axis, row in zip(axes.flat, frame.itertuples(index=False)):
         image_path = root / "data" / "raw" / "jpg" / row.image_id
+        true_name = names.get(int(row.true_idx), f"class {int(row.true_idx)}")
+        pred_name = names.get(int(row.pred_idx), f"class {int(row.pred_idx)}")
+        line = f"{true_name} {arrow} {pred_name}"
+        if len(line) > 28:
+            line = line[:27] + "…"
+        titles.append(line)
         axis.imshow(plt.imread(image_path))
         axis.axis("off")
         axis.set_title(
-            f"{int(row.true_idx)}{arrow}{int(row.pred_idx)} "
-            f"(p_true={row.true_prob:.3f}, p_pred={row.pred_prob:.3f})",
+            f"{line}\n(p_true={row.true_prob:.3f}, p_pred={row.pred_prob:.3f})",
             fontsize=7,
         )
+    print(f"fig3 titles: {titles}")
     caption_axis = axes.flat[-1]
     caption_axis.axis("off")
-    caption_axis.text(0.0, 0.5, TEXT["fig3_caption"], fontsize=8, va="center")
-    fig.suptitle(TEXT["fig3_caption"].splitlines()[0])
+    caption = TEXT["fig3_caption"]
+    if not names:
+        caption += "\n(class names unavailable: using class indices)"
+    caption_axis.text(0.0, 0.5, caption, fontsize=8, va="center")
+    fig.suptitle(caption.splitlines()[0])
     save(fig, output / "fig3_misclassified.png")
 
 
-def fig_worst_classes(runs_dir, output):
-    frame = pd.read_csv(Path(runs_dir) / "two-stage" / "per_class.csv")
+def fig_worst_classes(root, output):
+    names = load_class_names(root)
+    frame = pd.read_csv(Path(root) / "runs" / "two-stage" / "per_class.csv")
     worst = frame.sort_values(["accuracy", "class_idx"], kind="stable").head(
         N_WORST_CLASSES
     )
@@ -215,7 +236,13 @@ def fig_worst_classes(runs_dir, output):
     positions = np.arange(len(worst))
     axis.barh(positions, worst["accuracy"], color="#c44e52", alpha=0.85)
     axis.set_yticks(positions)
-    axis.set_yticklabels([f"class {int(label)}" for label in worst["label"]], fontsize=8)
+    labels = []
+    for label in worst["label"]:
+        idx = int(label) - 1
+        fallback = f"class {idx}"
+        labels.append(f"{names.get(idx, fallback)} (#{int(label)})")
+    axis.set_yticklabels(labels, fontsize=8)
+    print(f"fig4 labels: {labels[:5]}")
     axis.invert_yaxis()
     axis.set_xlim(0.0, 1.12)
     axis.set_xlabel(TEXT["accuracy"])
@@ -295,7 +322,7 @@ def main():
         fig_curves(metrics, histories, output)
         fig_cm(root / "runs", output)
         fig_misclassified(root, output)
-        fig_worst_classes(root / "runs", output)
+        fig_worst_classes(root, output)
         fig_bars(results, output)
         fig_split(root, output)
     except FileNotFoundError as exc:
