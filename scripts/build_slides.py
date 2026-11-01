@@ -1,13 +1,15 @@
-"""生成 21 页 16:9 中文演讲幻灯（阶段 E 修订版）。
+"""生成 26 页 16:9 中文演讲幻灯（阶段 E 过程性展示版）。
 
 实验数值从 report/results.csv、runs/*/metrics.json、history.csv、
 per_class.csv、misclassified.csv、data/meta.csv 与 data/class_names.csv 读取；
+代码页片段从 scripts/ 源文件按锚点提取，再交给 Pygments 渲染；
 公开对比数字来自外部事实，单独置于 PUBLIC_BENCHMARKS。
 公式由 matplotlib mathtext 渲染为透明 PNG；fig7 为卷积示意图。
 """
 
 import csv
 import json
+import textwrap
 from collections import Counter
 from pathlib import Path
 
@@ -15,11 +17,16 @@ import matplotlib
 
 matplotlib.use("Agg")
 
+MONO_FONT = Path(matplotlib.get_data_path()) / "fonts" / "ttf" / "DejaVuSansMono.ttf"
+
 import matplotlib.pyplot as plt
 import numpy as np
-from matplotlib.patches import FancyArrowPatch, Rectangle
+from matplotlib.patches import FancyArrowPatch, FancyBboxPatch, Rectangle
 from PIL import Image
 from pptx import Presentation
+from pygments import highlight
+from pygments.formatters import ImageFormatter
+from pygments.lexers import PythonLexer
 from pptx.dml.color import RGBColor
 from pptx.enum.shapes import MSO_SHAPE
 from pptx.enum.text import MSO_ANCHOR, PP_ALIGN
@@ -30,7 +37,7 @@ MODES = ("scratch", "frozen", "two-stage", "strong")
 FONT = "Source Han Sans CN"
 SLIDE_W = 13.333
 SLIDE_H = 7.5
-TOTAL_SLIDES = 21
+TOTAL_SLIDES = 26
 IMAGE_SIZE = 224
 IMAGE_PIXELS = IMAGE_SIZE * IMAGE_SIZE * 3
 
@@ -83,6 +90,16 @@ PUBLIC_BENCHMARKS = (
     ("CCT-14/7×2", 99.76, "from scratch · Transformer"),
     ("ViT-L/16 (2026)", 99.37, "303.4M · 官方划分"),
 )
+
+# 代码片段必须从这些源文件提取；锚点失配即报错退出。
+SNIPPETS = {
+    "fc": ("scripts/train_full.py", "model.fc =", 4),
+    "freeze": ("scripts/train_full.py", "def set_backbone_trainable", 8),
+    "dataset": ("scripts/train_full.py", "class Flowers(", 10),
+    "aug": ("scripts/presets.py", "AUG_OPS =", 13),
+    "split": ("scripts/data_split.py", "def _hash_key", 8),
+    "eval": ("scripts/train_full.py", "top = probs.topk", 16),
+}
 
 
 def pct(value):
@@ -190,8 +207,8 @@ def load_class_data(root):
     }
 
 
-def style_run(run, size, color, bold=False):
-    run.font.name = FONT
+def style_run(run, size, color, bold=False, font=FONT):
+    run.font.name = font
     run.font.size = Pt(size)
     run.font.bold = bold
     run.font.color.rgb = color
@@ -201,7 +218,7 @@ def style_run(run, size, color, bold=False):
         if element is None:
             element = rpr.makeelement(qn(tag), {})
             rpr.append(element)
-        element.set("typeface", FONT)
+        element.set("typeface", font)
 
 
 def add_text(
@@ -216,6 +233,7 @@ def add_text(
     bold=False,
     align=PP_ALIGN.LEFT,
     anchor=MSO_ANCHOR.TOP,
+    font=FONT,
 ):
     box = slide.shapes.add_textbox(
         Inches(x), Inches(y), Inches(width), Inches(height)
@@ -233,11 +251,11 @@ def add_text(
         paragraph.space_after = Pt(4)
         run = paragraph.add_run()
         run.text = line
-        style_run(run, size, color, bold)
+        style_run(run, size, color, bold, font)
     return box
 
 
-def add_bullets(slide, x, y, width, height, items, size=18):
+def add_bullets(slide, x, y, width, height, items, size=18, color=INK):
     box = slide.shapes.add_textbox(
         Inches(x), Inches(y), Inches(width), Inches(height)
     )
@@ -252,7 +270,7 @@ def add_bullets(slide, x, y, width, height, items, size=18):
         paragraph.space_after = Pt(8)
         run = paragraph.add_run()
         run.text = f"• {item}"
-        style_run(run, size, INK)
+        style_run(run, size, color)
     return box
 
 
@@ -427,6 +445,185 @@ def make_fig7(path):
     plt.close(fig)
 
 
+def wrap_code(lines, width=64):
+    output = []
+    for line in lines:
+        body = line.strip()
+        if not body:
+            output.append("")
+            continue
+        if len(line) <= width:
+            output.append(line)
+            continue
+        indent = line[: len(line) - len(line.lstrip())]
+        chunks = textwrap.wrap(
+            body,
+            width=max(20, width - len(indent) - 4),
+            break_long_words=True,
+            break_on_hyphens=False,
+        )
+        output.append(indent + chunks[0])
+        output.extend(indent + "    " + chunk for chunk in chunks[1:])
+    return output
+
+
+def extract_snippet(root, key):
+    rel_path, anchor, count = SNIPPETS[key]
+    path = root / rel_path
+    lines = path.read_text(encoding="utf-8").splitlines()
+    start = None
+    for index, line in enumerate(lines):
+        if anchor in line:
+            start = index
+            break
+    if start is None:
+        raise SystemExit(f"SNIPPET {key}: 锚点未找到 {rel_path}::{anchor}")
+    chunk = lines[start : start + count]
+    if len(chunk) < count:
+        raise SystemExit(f"SNIPPET {key}: 源文件行数不足（{rel_path}）")
+    indents = [len(line) - len(line.lstrip()) for line in chunk if line.strip()]
+    cut = min(indents) if indents else 0
+    stripped = [line[cut:] if len(line) >= cut else line.lstrip() for line in chunk]
+    while stripped and not stripped[-1].strip():
+        stripped.pop()
+    if not stripped:
+        raise SystemExit(f"SNIPPET {key}: 提取结果为空")
+    return {
+        "path": rel_path,
+        "start": start + 1,
+        "end": start + len(chunk),
+        "lines": wrap_code(stripped),
+        "first": stripped[0],
+    }
+
+
+def render_code_images(root, output_dir):
+    output_dir.mkdir(parents=True, exist_ok=True)
+    result = {}
+    for index, key in enumerate(SNIPPETS, start=1):
+        info = extract_snippet(root, key)
+        code = "\n".join(info["lines"])
+        # DejaVu Sans Mono 不含 CJK；split 片段含中文 docstring，单独用 Noto CJK。
+        font_path = MONO_FONT
+        if key == "split":
+            font_path = Path("/usr/share/fonts/noto-cjk/NotoSansCJK-Regular.ttc")
+        formatter = ImageFormatter(
+            font_name=str(font_path),
+            font_size=20,
+            line_numbers=True,
+            style="monokai",
+            background_color="#1E1E1E",
+            line_pad=6,
+            image_pad=12,
+        )
+        image_path = output_dir / f"c{index}.png"
+        image_path.write_bytes(highlight(code, PythonLexer(), formatter))
+        info["image"] = image_path
+        result[key] = info
+    return result
+
+
+def make_pipeline(path):
+    plt.rcParams["font.sans-serif"] = [FONT, "DejaVu Sans"]
+    plt.rcParams["axes.unicode_minus"] = False
+    fig, axis = plt.subplots(figsize=(12.6, 2.9))
+    axis.set_xlim(0, 13)
+    axis.set_ylim(0, 3)
+    axis.axis("off")
+    labels = [
+        "meta.csv",
+        "sha256\n划分",
+        "Dataset /\nDataLoader",
+        "ResNet18\nfc=102",
+        "两阶段\n训练",
+        "评估\nCM / top-k",
+        "runs/\n*.csv,json",
+    ]
+    centers = [0.95, 2.85, 4.75, 6.65, 8.55, 10.45, 12.35]
+    width = 1.55
+    height = 1.35
+    for center, label in zip(centers, labels):
+        axis.add_patch(
+            FancyBboxPatch(
+                (center - width / 2, 1.0),
+                width,
+                height,
+                boxstyle="round,pad=0.05,rounding_size=0.12",
+                facecolor="#DCE6F1",
+                edgecolor="#1F3864",
+                linewidth=1.5,
+            )
+        )
+        axis.text(
+            center,
+            1.68,
+            label,
+            ha="center",
+            va="center",
+            fontsize=10.5,
+            color="#1F3864",
+        )
+    for left, right in zip(centers[:-1], centers[1:]):
+        axis.add_patch(
+            FancyArrowPatch(
+                (left + width / 2 + 0.02, 1.68),
+                (right - width / 2 - 0.02, 1.68),
+                arrowstyle="->",
+                color="#C55A11",
+                lw=2,
+            )
+        )
+    axis.text(
+        6.5,
+        0.35,
+        "数据 → 划分 → 模型 → 训练 → 评估 → 产物",
+        ha="center",
+        fontsize=11,
+        color="#C55A11",
+    )
+    fig.savefig(path, dpi=200, bbox_inches="tight", facecolor="white")
+    plt.close(fig)
+
+
+def make_aug_examples(root, path):
+    images = sorted((root / "data" / "raw" / "jpg").glob("*.jpg"))
+    if not images:
+        raise SystemExit("缺少 data/raw/jpg/*.jpg，无法生成数据增强示例")
+    base = Image.open(images[0]).convert("RGB")
+    width, height = base.size
+    variants = (
+        ("原图", base),
+        ("裁剪", base.crop((width * 0.1, height * 0.1, width * 0.9, height * 0.9))),
+        ("翻转", base.transpose(Image.FLIP_LEFT_RIGHT)),
+        ("旋转", base.rotate(25, expand=True, fillcolor="white")),
+    )
+    plt.rcParams["font.sans-serif"] = [FONT, "DejaVu Sans"]
+    plt.rcParams["axes.unicode_minus"] = False
+    fig, axes = plt.subplots(2, 2, figsize=(8, 5.2))
+    for axis, (label, image) in zip(axes.flat, variants):
+        axis.imshow(image)
+        axis.set_title(label, fontsize=13, color="#1F3864")
+        axis.axis("off")
+    fig.tight_layout()
+    fig.savefig(path, dpi=200, facecolor="white")
+    plt.close(fig)
+
+
+def add_code_panel(slide, path, x, y, width, height):
+    shape = slide.shapes.add_shape(
+        MSO_SHAPE.ROUNDED_RECTANGLE,
+        Inches(x),
+        Inches(y),
+        Inches(width),
+        Inches(height),
+    )
+    shape.fill.solid()
+    shape.fill.fore_color.rgb = RGBColor(0x1E, 0x1E, 0x1E)
+    shape.line.color.rgb = RGBColor(0x7F, 0x7F, 0x7F)
+    shape.line.width = Pt(1)
+    add_image_fit(slide, path, x + 0.08, y + 0.08, width - 0.16, height - 0.16)
+
+
 def build(root, output):
     results = load_results(root)
     metrics = load_metrics(root)
@@ -467,6 +664,30 @@ def build(root, output):
         formula_paths.append(path)
     fig7 = figures / "fig7_conv.png"
     make_fig7(fig7)
+    code_data = render_code_images(root, figures / "code")
+    print("SNIPPETS:")
+    for key in SNIPPETS:
+        info = code_data[key]
+        print(
+            f"  {key}: {info['path']}:{info['start']}-{info['end']} | {info['first']}"
+        )
+    pipeline = figures / "pipeline.png"
+    make_pipeline(pipeline)
+    aug_example = figures / "aug_examples.png"
+    make_aug_examples(root, aug_example)
+
+    with (root / "runs" / "two-stage" / "history.csv").open(
+        encoding="utf-8"
+    ) as handle:
+        raw_history = list(csv.reader(handle))
+    log_columns = ("epoch", "train_loss", "val_loss", "val_acc", "phase")
+    log_index = [raw_history[0].index(column) for column in log_columns]
+    log_lines = [",".join(raw_history[0][index] for index in log_index)]
+    log_lines += [
+        ",".join(raw_history[row][index] for index in log_index)
+        for row in (1, 2, 3, 6)
+    ]
+    log_text = "\n".join(log_lines)
 
     prs = Presentation()
     prs.slide_width = Inches(SLIDE_W)
@@ -711,9 +932,44 @@ def build(root, output):
         INK,
     )
 
-    # 10 两阶段微调
+    # 10 代码：换掉最后一层
     slide = prs.slides.add_slide(blank)
-    add_header(slide, "两阶段微调", 10)
+    add_header(slide, "代码：换掉最后一层", 10)
+    add_code_panel(slide, code_data["fc"]["image"], 0.45, 1.1, 12.4, 2.55)
+    add_bullets(
+        slide,
+        0.7,
+        3.9,
+        12.0,
+        0.95,
+        ["`model.fc` 只替换分类头", "512 维 → 102 类：骨干权重保持不变"],
+        17,
+        ORANGE,
+    )
+    add_text(
+        slide,
+        0.7,
+        5.05,
+        12.0,
+        0.45,
+        "输出层是唯一和 102 类绑定的部分；骨干不需要动",
+        19,
+        INK,
+    )
+    add_text(
+        slide,
+        0.7,
+        5.75,
+        12.0,
+        0.35,
+        f"{trainable:,} = 512×102 + 102（回扣第 9 页）",
+        14,
+        GRAY,
+    )
+
+    # 11 两阶段微调
+    slide = prs.slides.add_slide(blank)
+    add_header(slide, "两阶段微调", 11)
     add_image_fit(slide, formula_paths[7], 1.0, 1.05, 11.3, 1.55)
     for y, mode, stages, color in (
         (2.9, "two-stage", two_stage, NAVY),
@@ -756,33 +1012,56 @@ def build(root, output):
         17,
     )
 
-    # 11 数据增强
+    # 12 代码：冻结与解冻
     slide = prs.slides.add_slide(blank)
-    add_header(slide, "数据增强", 11)
-    add_text(
-        slide,
-        0.8,
-        1.5,
-        11.8,
-        0.7,
-        "一张图 → 很多张“新图”",
-        28,
-        INK,
-        True,
-    )
+    add_header(slide, "代码：冻结与解冻", 12)
+    add_code_panel(slide, code_data["freeze"]["image"], 0.45, 1.1, 12.4, 4.85)
     add_bullets(
         slide,
-        0.8,
-        2.6,
-        11.8,
-        3.8,
-        ["裁剪：改变构图与尺度", "翻转/旋转：改变方向", "颜色抖动：模拟光照", "本质：让模型见到更多变化"],
-        21,
+        0.7,
+        6.15,
+        12.0,
+        1.0,
+        ["fc 层始终 requires_grad=True", "解冻后重建 optimizer，动量重置"],
+        17,
+        ORANGE,
     )
 
-    # 12 数据集
+    # 13 数据增强 + 代码
     slide = prs.slides.add_slide(blank)
-    add_header(slide, "数据集与划分", 12)
+    add_header(slide, "数据增强 + 代码", 13)
+    add_image_fit(slide, aug_example, 0.4, 1.1, 5.8, 4.4)
+    add_code_panel(slide, code_data["aug"]["image"], 6.45, 1.1, 6.45, 4.4)
+    add_bullets(
+        slide,
+        0.7,
+        5.8,
+        12.0,
+        1.2,
+        ["裁剪/翻转/旋转/颜色抖动：一张图变多样本", "`AUG_OPS`：baseline 与 strong 两套配置"],
+        16,
+        ORANGE,
+    )
+
+    # 14 流水线 + dataset 代码
+    slide = prs.slides.add_slide(blank)
+    add_header(slide, "流水线：从数据到产物", 14)
+    add_image_fit(slide, pipeline, 0.4, 1.05, 12.5, 2.8)
+    add_code_panel(slide, code_data["dataset"]["image"], 0.45, 4.05, 12.4, 2.9)
+    add_text(
+        slide,
+        0.7,
+        7.05,
+        12.0,
+        0.3,
+        "Dataset 负责把 image_id 和标签读成模型输入",
+        12,
+        GRAY,
+    )
+
+    # 15 数据集与划分
+    slide = prs.slides.add_slide(blank)
+    add_header(slide, "数据集与划分", 15)
     add_bullets(
         slide,
         0.7,
@@ -809,9 +1088,24 @@ def build(root, output):
         GRAY,
     )
 
-    # 13 四组对照
+    # 16 代码：sha256 分桶
     slide = prs.slides.add_slide(blank)
-    add_header(slide, "四组对照实验", 13)
+    add_header(slide, "代码：sha256 分桶", 16)
+    add_code_panel(slide, code_data["split"]["image"], 0.45, 1.1, 12.4, 4.85)
+    add_bullets(
+        slide,
+        0.7,
+        6.15,
+        12.0,
+        1.0,
+        ["每个 image_id 算 sha256 键", "按 (k, image_id) 排序：前 3 张进 val"],
+        17,
+        ORANGE,
+    )
+
+    # 17 四组对照
+    slide = prs.slides.add_slide(blank)
+    add_header(slide, "四组对照实验", 17)
     cards = (
         (0.7, 1.25, "scratch", "不借：随机初始化，全部参数可训", ORANGE),
         (6.8, 1.25, "frozen", f"借骨干：只训 {trainable:,} 个参数", NAVY),
@@ -846,9 +1140,9 @@ def build(root, output):
         GRAY,
     )
 
-    # 14 结果表
+    # 18 结果表
     slide = prs.slides.add_slide(blank)
-    add_header(slide, "结果总表", 14)
+    add_header(slide, "结果总表", 18)
     rows = [
         [
             mode,
@@ -879,25 +1173,65 @@ def build(root, output):
         GRAY,
     )
 
-    # 15 曲线
+    # 19 曲线 + 真实日志
     slide = prs.slides.add_slide(blank)
-    add_header(slide, "训练曲线", 15)
-    add_image_fit(slide, figures / "fig1_curves.png", 0.45, 1.05, 12.45, 5.9)
-    add_caption(
+    add_header(slide, "训练曲线与日志", 19)
+    add_image_fit(slide, figures / "fig1_curves.png", 0.5, 1.0, 12.3, 3.7)
+    add_text(
         slide,
-        f"scratch 长期落后：第 12 轮 {pct(epoch12['scratch'])}，frozen {pct(epoch12['frozen'])}",
+        0.7,
+        4.72,
+        6.0,
+        0.25,
+        "关键列：epoch / train_loss / val_loss / val_acc / phase",
+        11,
+        GRAY,
+    )
+    add_text(
+        slide,
+        9.1,
+        4.7,
+        3.5,
+        0.3,
+        "第 6 轮 = 解冻",
+        13,
+        ORANGE,
+        True,
+        align=PP_ALIGN.RIGHT,
+    )
+    add_rect(slide, 0.55, 5.0, 12.2, 1.6, LIGHT)
+    add_text(
+        slide,
+        0.75,
+        5.08,
+        11.9,
+        1.45,
+        log_text,
+        14,
+        RGBColor(0x1E, 0x1E, 0x1E),
+        font="DejaVu Sans Mono",
+    )
+    add_text(
+        slide,
+        0.7,
+        6.72,
+        12.0,
+        0.3,
+        "runs/two-stage/history.csv：第 1–3、6 轮",
+        12,
+        GRAY,
     )
 
-    # 16 柱状
+    # 20 柱状
     slide = prs.slides.add_slide(blank)
-    add_header(slide, "指标对比", 16)
+    add_header(slide, "指标对比", 20)
     add_image_fit(slide, figures / "fig5_bars.png", 0.45, 1.05, 12.45, 5.9)
     add_caption(
         slide,
         f"strong {pct(strong_top1)}，two-stage {pct(two_top1)}，相差 {(strong_top1 - two_top1) * 100:.2f} 个百分点",
     )
 
-    # 17 混淆矩阵
+    # 21 混淆矩阵
     slide = prs.slides.add_slide(blank)
     add_rect(slide, 0, 0, 4.0, SLIDE_H, NAVY)
     add_text(slide, 0.4, 0.55, 3.2, 0.8, "怎么看混淆矩阵", 26, WHITE, True)
@@ -929,23 +1263,38 @@ def build(root, output):
         7.12,
         0.8,
         0.3,
-        "17/21",
+        "21/26",
         11,
         RGBColor(0xBF, 0xBF, 0xBF),
         align=PP_ALIGN.RIGHT,
     )
     add_image_fit(slide, figures / "fig2_cm.png", 4.1, 0.1, 9.1, 7.3)
 
-    # 18 错例
+    # 22 代码：评估与混淆矩阵
     slide = prs.slides.add_slide(blank)
-    add_header(slide, "典型错例", 18)
+    add_header(slide, "代码：评估与混淆矩阵", 22)
+    add_code_panel(slide, code_data["eval"]["image"], 0.45, 1.1, 12.4, 4.85)
+    add_bullets(
+        slide,
+        0.7,
+        6.15,
+        12.0,
+        1.0,
+        ["topk(5) 一次算 top-1/3/5", "CM 用 index_add_ 逐 batch 累加"],
+        17,
+        ORANGE,
+    )
+
+    # 23 错例
+    slide = prs.slides.add_slide(blank)
+    add_header(slide, "典型错例", 23)
     add_image_fit(slide, figures / "fig3_misclassified.png", 0.35, 1.05, 12.6, 5.65)
     add_caption(
         slide,
         f"true_prob 最小的 {len(class_data['top9'])} 条中，camellia→mallow 有 {class_data['camellia_mallow']} 条",
     )
 
-    # 19 最差类别
+    # 24 最差类别
     slide = prs.slides.add_slide(blank)
     add_rect(slide, 0, 0, 2.4, SLIDE_H, NAVY)
     add_text(slide, 0.3, 0.55, 1.9, 0.75, "最差类别", 24, WHITE, True)
@@ -966,15 +1315,15 @@ def build(root, output):
         7.12,
         1.8,
         0.3,
-        "19/21",
+        "24/26",
         11,
         RGBColor(0xBF, 0xBF, 0xBF),
     )
     add_image_fit(slide, figures / "fig4_worst_classes.png", 2.45, 0.1, 10.8, 7.3)
 
-    # 20 公开对比
+    # 25 公开对比
     slide = prs.slides.add_slide(blank)
-    add_header(slide, "公开结果量级", 20)
+    add_header(slide, "公开结果量级", 25)
     public_rows = [
         [name, f"{value:.2f}%", note] for name, value, note in PUBLIC_BENCHMARKS
     ]
@@ -1007,45 +1356,59 @@ def build(root, output):
         True,
     )
 
-    # 21 结论与边界
+    # 26 结论、边界与踩坑
     slide = prs.slides.add_slide(blank)
-    add_header(slide, "结论与边界", 21)
-    add_text(slide, 0.7, 1.25, 5.6, 0.4, "结论", 20, NAVY, True)
+    add_header(slide, "结论、边界与踩坑", 26)
+    add_text(slide, 0.7, 1.15, 5.6, 0.35, "结论", 18, NAVY, True)
     add_bullets(
         slide,
         0.7,
-        1.75,
+        1.55,
         5.6,
-        3.8,
+        2.4,
         [
             f"预训练是主力：frozen {frozen_epochs} 轮 {pct(frozen_top1)}",
             f"解冻跃迁：strong {pct(strong_top1)}",
             f"scratch 仅 {pct(scratch_top1)}：从零不划算",
         ],
-        18,
+        16,
     )
-    add_text(slide, 7.1, 1.25, 5.5, 0.4, "边界", 20, ORANGE, True)
+    add_text(slide, 7.1, 1.15, 5.5, 0.35, "边界", 18, ORANGE, True)
     add_bullets(
         slide,
         7.1,
-        1.75,
+        1.55,
         5.5,
-        3.8,
+        2.4,
         [
             "单 seed，无种子方差",
             f"验证 {metrics['scratch']['run']['val_n']} 张，每类 {metrics['scratch']['run']['val_per_class']} 张",
             "strong 是三因素 bundle，不做单因素归因",
         ],
-        18,
+        16,
+    )
+    add_text(slide, 0.7, 4.2, 5.6, 0.35, "踩坑记录", 16, ORANGE, True)
+    add_bullets(
+        slide,
+        0.7,
+        4.6,
+        12.0,
+        1.5,
+        [
+            "`/kaggle/src` 只读 → 写 `/kaggle/working`",
+            "`truep_sum` 102 vs 64 → 用 index_add_",
+            "GPU 长队列 → CPU 冒烟先跑通",
+        ],
+        15,
     )
     add_text(
         slide,
         0.7,
-        6.35,
+        6.55,
         12.0,
-        0.6,
+        0.55,
         "Q & A",
-        32,
+        28,
         ORANGE,
         True,
         align=PP_ALIGN.CENTER,
@@ -1056,7 +1419,6 @@ def build(root, output):
     print(f"wrote {output}")
     print(f"slides={len(prs.slides)}")
     return prs
-
 
 def main():
     root = Path(__file__).resolve().parents[1]
