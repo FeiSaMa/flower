@@ -1,0 +1,22 @@
+{
+  "chain": "x -> backbone -> fc -> softmax -> loss",
+  "input": [
+    64,
+    3,
+    224,
+    224
+  ],
+  "backbone": [
+    64,
+    512
+  ],
+  "fc": [
+    64,
+    102
+  ],
+  "softmax": [
+    64,
+    102
+  ],
+  "loss": []
+}

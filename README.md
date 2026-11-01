@@ -117,6 +117,19 @@ uvx --python 3.13 --with python-pptx --with pygments --with matplotlib python3 s
 10. 训练损失与评估损失解耦：训练按预设可用 label smoothing，**评估固定 `label_smoothing=0`**。
 11. `random.shuffle` 不在跨版本稳定契约内；划分用 **sha256 分桶**，test 按 meta 行序。
 
+## 训练过程可视化
+
+`scripts/demo_batches.py` 在本机 CPU（`uv run --no-project --python 3.13 --with torch --with torchvision`）跑 2–5 个 epoch，逐 batch 记录 loss 与固定样本预测：
+
+- `report/figures/batch_flow.png`：一个 batch 的完整链路（64 张 → 骨干 → fc → softmax → loss → 更新）
+- `report/figures/batch_loss.png`：逐 batch loss（2 epoch × 28 步）
+- `report/figures/pred_evolution5.png`：16 张不同类别测试图在 ep0/1/2/3/5 的预测变化（绿=对，红=错）
+- `report/figures/sample_acc_curve.png`：这 16 张图的 top-1 准确率随 epoch（0% → 81.2%）
+- `demo/batch_log.csv`：逐 batch 记录（段/批/loss/acc/lr/耗时）
+- `demo/pred_ep*.json`：每 epoch 的 top-5 预测
+
+用 `--epochs 5` 可重跑；默认 2。
+
 ## 报告与 PPT
 
-`report/report.md` 已完成，六章为：为什么不能从零、迁移学习原理、方法与设置、结果与公开对比、错例分析、讨论与边界。报告中的结果表来自 `report/results.csv`，图来自 `report/figures/`；`report/slides.pptx` 为 14 页演讲版。
+`report/report.md` 已完成，六章为：为什么不能从零、迁移学习原理、方法与设置、结果与公开对比、错例分析、讨论与边界。报告中的结果表来自 `report/results.csv`，图来自 `report/figures/`；`report/slides.pptx` 为 26 页演讲版。
