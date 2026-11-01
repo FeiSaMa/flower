@@ -39,6 +39,8 @@ flower/
 
 Kaggle 训练使用 **script kernel**；`kaggle/flower/` 下为可直接 push 的生成物。
 
+`pyproject.toml` 只声明项目元信息与可选依赖（`plot` / `slides`）；训练依赖由 Kaggle 镜像提供，本机不安装 torch。
+
 ## 数据
 
 官方站点 <https://www.robots.ox.ac.uk/~vgg/data/flowers/102/>。

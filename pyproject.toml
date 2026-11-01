@@ -1,0 +1,11 @@
+[project]
+name = "flower"
+version = "0.1.0"
+description = "牛津 102 花卉细粒度分类：迁移学习实验"
+requires-python = ">=3.13"
+dependencies = []
+
+[project.optional-dependencies]
+# 本机（Python 3.13 隔离环境）出图与 PPT 用；torch 由 Kaggle 环境提供，不在本机安装
+plot = ["matplotlib>=3.8", "pandas>=2.0"]
+slides = ["python-pptx>=0.6.23"]
