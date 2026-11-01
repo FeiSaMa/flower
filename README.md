@@ -130,6 +130,10 @@ uvx --python 3.13 --with python-pptx --with pygments --with matplotlib python3 s
 
 用 `--epochs 5` 可重跑；默认 2。
 
+动画版（可拖动时间轴，浏览器直接打开）：`report/training_animation.html`；
+录屏：`report/figures/training_animation.mp4`（30s / 1280×720）与 `training_animation.gif`（18s）。
+重新生成：`python3 scripts/build_animation.py` + `python3 scripts/record_animation.py`（后者需系统 Chrome 与 ffmpeg）。
+
 ## 报告与 PPT
 
 `report/report.md` 已完成，六章为：为什么不能从零、迁移学习原理、方法与设置、结果与公开对比、错例分析、讨论与边界。报告中的结果表来自 `report/results.csv`，图来自 `report/figures/`；`report/slides.pptx` 为 26 页演讲版。
