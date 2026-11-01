@@ -67,29 +67,47 @@ HTML = r"""<!doctype html>
 <meta charset="utf-8">
 <title>一次训练到底发生了什么</title>
 <style>
-  html, body { margin: 0; width: 1280px; height: 720px; overflow: hidden; background: #ffffff; }
-  body { font-family: "Source Han Sans CN", "Noto Sans CJK SC", sans-serif; color: #262626; }
-  #app { position: relative; width: 1280px; height: 720px; }
+  html, body { margin: 0; width: 1280px; height: 720px; overflow: hidden; background: #020617; }
+  body {
+    font-family: "JetBrains Mono", "Noto Sans Mono CJK SC", "Source Han Sans CN", ui-monospace,
+      SFMono-Regular, Menlo, Consolas, monospace;
+    color: #FFFFFF;
+  }
+  #app { position: relative; width: 1280px; height: 720px; background: #020617; }
   header {
-    height: 70px; background: #1F3864; color: white; display: flex;
-    align-items: center; justify-content: space-between; padding: 0 28px;
+    height: 64px; background: #020617; border-bottom: 1px solid #1E293B;
+    display: flex; align-items: center; justify-content: space-between; padding: 0 24px;
     box-sizing: border-box;
   }
-  header h1 { font-size: 26px; margin: 0; font-weight: 700; letter-spacing: 1px; }
-  #stage { font-size: 17px; color: #F4B183; font-weight: 700; }
-  #canvas { display: block; width: 1280px; height: 560px; }
+  header h1 {
+    font-size: 1.5rem; line-height: 1; margin: 0; font-weight: 700;
+    letter-spacing: -0.025em; color: #FFFFFF;
+  }
+  #stage {
+    font-size: 0.625rem; font-weight: 700; letter-spacing: 0.12em;
+    text-transform: uppercase; color: #FB923C;
+  }
+  #canvas { display: block; width: 1280px; height: 560px; background: #020617; }
   footer {
-    height: 90px; box-sizing: border-box; padding: 12px 28px;
-    background: #F2F2F2; display: flex; align-items: center; gap: 16px;
+    height: 96px; box-sizing: border-box; padding: 0 24px; background: #020617;
+    border-top: 1px solid #1E293B; display: flex; align-items: center; gap: 16px;
   }
   #play {
-    width: 86px; height: 34px; border: 0; border-radius: 6px;
-    background: #C55A11; color: white; font-size: 15px; font-weight: 700;
-    cursor: pointer;
+    width: 96px; height: 36px; border: 1px solid #1E293B; border-radius: 0.5rem;
+    background: #0F172A; color: #FFFFFF; font: 600 0.75rem/1 inherit; cursor: pointer;
+    letter-spacing: 0.04em;
   }
-  #seek { flex: 1; accent-color: #C55A11; height: 6px; }
-  #time { width: 78px; color: #595959; font-size: 14px; text-align: right; }
-  #tip { color: #595959; font-size: 13px; width: 300px; }
+  #seek {
+    flex: 1; height: 4px; appearance: none; border-radius: 2px;
+    background: linear-gradient(to right, #FB923C 0%, #1E293B 0%);
+    outline: none;
+  }
+  #seek::-webkit-slider-thumb {
+    appearance: none; width: 12px; height: 12px; border-radius: 50%;
+    background: #FB923C; border: 1px solid #020617;
+  }
+  #time { width: 130px; color: #94A3B8; font-size: 0.75rem; text-align: right; font-variant-numeric: tabular-nums; }
+  #tip { color: #475569; font-size: 0.625rem; width: 220px; letter-spacing: 0.02em; }
 </style>
 </head>
 <body>
@@ -102,8 +120,8 @@ HTML = r"""<!doctype html>
   <footer>
     <button id="play">暂停</button>
     <input id="seek" type="range" min="0" max="30" step="0.01" value="0">
-    <div id="time">0.0 s</div>
-    <div id="tip">拖动时间轴可回看任意时刻</div>
+    <div id="time">0.0s / 30.0s</div>
+    <div id="tip">拖动时间轴可回看</div>
   </footer>
 </div>
 <script>
@@ -111,8 +129,11 @@ const DATA = __DATA__;
 const canvas = document.getElementById('canvas');
 const ctx = canvas.getContext('2d');
 const W = 1280, H = 560;
-const NAVY = '#1F3864', ORANGE = '#C55A11', GRAY = '#595959';
-const LIGHT = '#F2F2F2', INK = '#262626', GREEN = '#2E7D32', RED = '#C62828';
+const BG = '#020617', PANEL = '#0F172A', BORDER = '#1E293B';
+const INK = '#FFFFFF', MUTED = '#94A3B8', DIM = '#475569';
+const CYAN = '#22D3EE', GREEN = '#34D399', VIOLET = '#A78BFA';
+const AMBER = '#FBBF24', ROSE = '#FB7185', ORANGE = '#FB923C';
+const NAVY = INK, GRAY = MUTED, LIGHT = PANEL, RED = ROSE;
 const BATCH = DATA.batch.filter(item => item.epoch === 1);
 const IMAGES = {};
 let loaded = 0;
@@ -122,7 +143,7 @@ let lastTimestamp = null;
 window.__ready = false;
 
 function font(size, bold) {
-  return (bold ? 'bold ' : '') + size + 'px "Source Han Sans CN", "Noto Sans CJK SC", sans-serif';
+  return (bold ? 'bold ' : '') + size + 'px "JetBrains Mono", "Noto Sans Mono CJK SC", "Source Han Sans CN", ui-monospace, monospace';
 }
 function text(value, x, y, size = 16, color = INK, align = 'left', bold = false) {
   ctx.fillStyle = color;
@@ -147,14 +168,14 @@ function roundRect(x, y, w, h, r = 10) {
 function box(x, y, w, h, fill, stroke, active = false) {
   ctx.save();
   if (active) {
-    ctx.shadowColor = 'rgba(197,90,17,0.35)';
-    ctx.shadowBlur = 16;
+    ctx.shadowColor = stroke;
+    ctx.shadowBlur = 7;
   }
-  roundRect(x, y, w, h, 12);
+  roundRect(x, y, w, h, 8);
   ctx.fillStyle = fill;
   ctx.fill();
-  ctx.lineWidth = active ? 3 : 1.5;
-  ctx.strokeStyle = active ? ORANGE : stroke;
+  ctx.lineWidth = 1;
+  ctx.strokeStyle = active ? stroke : BORDER;
   ctx.stroke();
   ctx.restore();
 }
@@ -177,8 +198,14 @@ function arrow(x1, y1, x2, y2, color = ORANGE) {
   ctx.restore();
 }
 function clear() {
-  ctx.fillStyle = '#ffffff';
+  ctx.fillStyle = BG;
   ctx.fillRect(0, 0, W, H);
+  roundRect(16, 8, 1248, 544, 16);
+  ctx.fillStyle = PANEL;
+  ctx.fill();
+  ctx.lineWidth = 1;
+  ctx.strokeStyle = BORDER;
+  ctx.stroke();
 }
 function shortName(name, limit) {
   return name.length <= limit ? name : name.slice(0, limit - 1) + '…';
@@ -203,34 +230,34 @@ function predictionAccuracy(epoch) {
 
 function drawBatch(t) {
   const N = 1734, cols = 34, rows = 51, batchSize = 64;
-  const gx = 38, gy = 78, gw = 690, gh = 430;
+  const gx = 44, gy = 92, gw = 690, gh = 418;
   const dx = gw / cols, dy = gh / rows;
   const b = Math.min(28, Math.floor(t / 0.28) + 1);
   const local = Math.max(0, Math.min(1, (t - (b - 1) * 0.28) / 0.28));
   const entry = BATCH[Math.min(b, 28) - 1];
-  text('1734 张训练图', gx, 52, 18, NAVY, 'left', true);
-  text('每批 64 张：亮起 → 送入模型', gx, 535, 14, GRAY);
+  text('TRAIN IMAGES / 1734', gx, 58, 10, MUTED, 'left', true);
+  text('64 images = 1 batch · 28 batches = 1 epoch', gx, 532, 10, DIM, 'left');
 
-  box(830, 145, 400, 270, '#F8FAFD', NAVY, true);
-  text('模型', 1030, 190, 25, NAVY, 'center', true);
-  text('ResNet18 + fc(102)', 1030, 220, 15, GRAY, 'center');
-  text('epoch 1 · batch ' + b + '/28', 1030, 270, 18, INK, 'center', true);
-  text('batch loss', 1030, 306, 14, GRAY, 'center');
-  text(entry.loss.toFixed(2), 1030, 350, 30, ORANGE, 'center', true);
+  box(826, 150, 406, 270, PANEL, GREEN, true);
+  text('MODEL / BACKBONE', 1029, 186, 10, GREEN, 'center', true);
+  text('ResNet18 + fc(102)', 1029, 210, 12, MUTED, 'center');
+  text('EPOCH 1 · BATCH ' + b + '/28', 1029, 255, 14, INK, 'center', true);
+  text('LOSS', 1029, 300, 10, MUTED, 'center', true);
+  text(entry.loss.toFixed(2), 1029, 342, 30, ROSE, 'center', true);
 
   for (let i = 0; i < N; i += 1) {
     const col = i % cols, row = Math.floor(i / cols);
     let x = gx + col * dx + dx / 2;
     let y = gy + row * dy + dy / 2;
-    let color = '#D9D9D9', radius = 2.2;
-    if (i < (b - 1) * batchSize) color = '#9DB2CE';
+    let color = BORDER, radius = 2.2;
+    if (i < (b - 1) * batchSize) color = DIM;
     if (i >= (b - 1) * batchSize && i < b * batchSize) {
       const j = i - (b - 1) * batchSize;
-      const tx = 850 + (j % 8) * 7;
-      const ty = 205 + Math.floor(j / 8) * 17;
+      const tx = 846 + (j % 8) * 7;
+      const ty = 214 + Math.floor(j / 8) * 17;
       x += (tx - x) * local;
       y += (ty - y) * local;
-      color = ORANGE;
+      color = CYAN;
       radius = 3.0;
     }
     ctx.beginPath();
@@ -239,49 +266,51 @@ function drawBatch(t) {
     ctx.fill();
   }
   if (local < 1) {
-    arrow(gx + gw + 12, 290, 820, 290, 'rgba(197,90,17,0.7)');
+    arrow(gx + gw + 12, 292, 816, 292, 'rgba(251,146,60,0.65)');
   }
-  text('1 个 batch = 64 张图', 1030, 465, 15, GRAY, 'center');
+  text('1 batch = 64 images', 1029, 458, 10, MUTED, 'center', true);
 }
 
 function drawNetwork(t) {
   const p = Math.max(0, Math.min(1, (t - 8) / 7));
   const step = Math.min(4, Math.floor(p * 5));
   const labels = [
-    ['64 张图', '(64,3,224,224)', '输入'],
-    ['ResNet18 骨干', '(64,512)', '11.2M 参数'],
-    ['fc', '(64,102)', '52,326 可训'],
-    ['softmax', '(64,102)', '概率'],
-    ['交叉熵', 'loss 标量', '一个数'],
+    ['INPUT', '(64,3,224,224)', '64 images'],
+    ['BACKBONE', '(64,512)', '11.2M params'],
+    ['FC', '(64,102)', '52,326 trainable'],
+    ['SOFTMAX', '(64,102)', 'probabilities'],
+    ['LOSS', 'scalar', 'cross-entropy'],
   ];
-  const xs = [230, 470, 710, 950, 1130];
-  const widths = [180, 190, 160, 180, 130];
-  text('一个 batch 穿过网络', 40, 52, 20, NAVY, 'left', true);
-  text('形状链来自 demo/shapes.json', 40, 535, 14, GRAY);
-  const tile = 22;
-  for (let i = 0; i < 64; i += 1) {
+  const colors = [CYAN, GREEN, AMBER, CYAN, ROSE];
+  const xs = [248, 460, 680, 860, 1072];
+  const widths = [150, 160, 120, 150, 160];
+  text('FORWARD PASS / ONE BATCH', 44, 58, 10, MUTED, 'left', true);
+  text('shapes.json', 44, 532, 10, VIOLET, 'left', true);
+  const tile = 28;
+  for (let i = 0; i < 16; i += 1) {
     const imageId = DATA.sampleIds[i % DATA.sampleIds.length];
     const image = IMAGES[imageId];
-    const x = 40 + (i % 8) * tile;
-    const y = 115 + Math.floor(i / 8) * tile;
+    const x = 44 + (i % 4) * tile;
+    const y = 118 + Math.floor(i / 4) * tile;
     if (image && image.complete) {
       ctx.drawImage(image, x, y, tile - 2, tile - 2);
     } else {
-      ctx.fillStyle = '#D9D9D9';
+      ctx.fillStyle = BORDER;
       ctx.fillRect(x, y, tile - 2, tile - 2);
     }
   }
-  text('16 张缩略图循环排列', 40, 315, 13, GRAY);
+  text('16 thumbnails', 44, 258, 10, DIM, 'left');
+  arrow(162, 206, 240, 206);
   for (let i = 0; i < labels.length; i += 1) {
     const active = i === step;
-    box(xs[i], 165, widths[i], 125, active ? '#FFF4EC' : LIGHT, active ? ORANGE : '#B7C4D6', active);
-    text(labels[i][0], xs[i] + widths[i] / 2, 205, 17, active ? ORANGE : NAVY, 'center', true);
-    text(labels[i][1], xs[i] + widths[i] / 2, 235, 14, GRAY, 'center');
-    text(labels[i][2], xs[i] + widths[i] / 2, 265, 13, GRAY, 'center');
-    if (i < labels.length - 1) arrow(xs[i] + widths[i] + 4, 228, xs[i + 1] - 4, 228);
+    box(xs[i], 165, widths[i], 125, PANEL, colors[i], active);
+    text(labels[i][0], xs[i] + widths[i] / 2, 202, 10, colors[i], 'center', true);
+    text(labels[i][1], xs[i] + widths[i] / 2, 230, 12, INK, 'center');
+    text(labels[i][2], xs[i] + widths[i] / 2, 258, 10, DIM, 'center');
+    if (i < labels.length - 1) arrow(xs[i] + widths[i] + 6, 228, xs[i + 1] - 6, 228);
   }
-  text('前向：图片 → 特征 → 分数 → 概率 → loss；然后反向传播更新 fc', 640, 390, 18, INK, 'center');
-  text('第 ' + (step + 1) + ' / 5 步', 640, 430, 15, ORANGE, 'center', true);
+  text('forward → backward → update fc', 640, 384, 12, MUTED, 'center');
+  text('STEP ' + (step + 1) + ' / 5', 640, 416, 10, ORANGE, 'center', true);
 }
 
 function drawLoss(t) {
@@ -291,9 +320,9 @@ function drawLoss(t) {
   const maxLoss = Math.max(...DATA.batch.map(item => item.loss)) + 0.2;
   const x = index => x0 + (x1 - x0) * index / (DATA.batch.length - 1);
   const y = value => y0 - (y0 - y1) * value / maxLoss;
-  const colors = ['#1F3864', '#C55A11', '#595959', '#8C564B', '#2CA02C'];
-  text('逐 batch loss：每个点 = 一次参数更新', 40, 52, 20, NAVY, 'left', true);
-  ctx.strokeStyle = '#D9D9D9';
+  const colors = [ROSE, ROSE, ROSE, ROSE, ROSE];
+  text('LOSS CURVE / 140 UPDATES', 44, 58, 10, MUTED, 'left', true);
+  ctx.strokeStyle = BORDER;
   ctx.lineWidth = 1;
   for (let g = 0; g <= 5; g += 1) {
     const yy = y0 - (y0 - y1) * g / 5;
@@ -303,7 +332,7 @@ function drawLoss(t) {
   for (let index = 1; index < n; index += 1) {
     const current = DATA.batch[index];
     ctx.strokeStyle = colors[current.epoch - 1];
-    ctx.lineWidth = 1.8;
+    ctx.lineWidth = 1.5;
     ctx.beginPath();
     ctx.moveTo(x(index - 1), y(DATA.batch[index - 1].loss));
     ctx.lineTo(x(index), y(current.loss));
@@ -317,15 +346,15 @@ function drawLoss(t) {
     ctx.fill();
   }
   const current = DATA.batch[n - 1];
-  ctx.fillStyle = ORANGE;
-  ctx.beginPath(); ctx.arc(x(n - 1), y(current.loss), 6, 0, Math.PI * 2); ctx.fill();
-  text('当前 loss ' + current.loss.toFixed(2), x(n - 1) + 12, y(current.loss) - 10, 16, ORANGE, 'left', true);
-  text('batch 序号', (x0 + x1) / 2, 520, 14, GRAY, 'center');
+  ctx.fillStyle = ROSE;
+  ctx.beginPath(); ctx.arc(x(n - 1), y(current.loss), 5, 0, Math.PI * 2); ctx.fill();
+  text('LOSS ' + current.loss.toFixed(2), x(n - 1) + 12, y(current.loss) - 10, 12, ROSE, 'left', true);
+  text('BATCH INDEX', (x0 + x1) / 2, 520, 10, MUTED, 'center', true);
   for (const index of [1, 28, 56, 84, 112, 140]) {
     text(String(index), x(index - 1), 495, 10, GRAY, 'center');
   }
   for (let epoch = 1; epoch <= 5; epoch += 1) {
-    text('epoch ' + epoch, x0 + (epoch - 1) * 60, 78, 11, colors[epoch - 1]);
+    text('EPOCH ' + epoch, x0 + (epoch - 1) * 72, 78, 10, DIM, 'left', true);
   }
 }
 
@@ -334,10 +363,12 @@ function drawPredictions(t) {
   let epoch = Math.min(4, Math.floor(elapsed / 1.4));
   if (t >= 29.0) epoch = 5;
   const accuracy = predictionAccuracy(epoch);
-  text('同一批图：预测如何从随机变成认对', 40, 48, 20, NAVY, 'left', true);
-  text('ep' + epoch, 1180, 48, 22, ORANGE, 'right', true);
-  text('16 张 top-1 准确率 ' + oneDecimal(accuracy * 100) + '%', 1180, 78, 16, NAVY, 'right', true);
-  const cols = 8, cellW = 150, cellH = 215, x0 = 32, y0 = 95;
+  text('PREDICTION EVOLUTION', 44, 58, 10, MUTED, 'left', true);
+  text('同一批图：预测如何从随机变成认对', 44, 82, 14, INK, 'left', true);
+  text('EP' + epoch, 1180, 58, 10, CYAN, 'right', true);
+  text('TOP-1 ACCURACY', 1180, 82, 10, MUTED, 'right', true);
+  text(oneDecimal(accuracy * 100) + '%', 1180, 112, 24, INK, 'right', true);
+  const cols = 8, cellW = 150, cellH = 212, x0 = 32, y0 = 120;
   for (let index = 0; index < DATA.sampleIds.length; index += 1) {
     const imageId = DATA.sampleIds[index];
     const entry = DATA.preds[String(epoch)][imageId];
@@ -346,50 +377,66 @@ function drawPredictions(t) {
     const col = index % cols, row = Math.floor(index / cols);
     const cx = x0 + col * cellW, cy = y0 + row * cellH;
     const image = IMAGES[imageId];
+    ctx.strokeStyle = BORDER;
+    ctx.lineWidth = 1;
+    roundRect(cx + 4, cy - 4, cellW - 8, 180, 8);
+    ctx.stroke();
     if (image && image.complete) {
-      const scale = Math.min(120 / image.width, 90 / image.height);
+      const scale = Math.min(120 / image.width, 88 / image.height);
       const iw = image.width * scale, ih = image.height * scale;
       ctx.save();
-      roundRect(cx + (cellW - iw) / 2, cy, iw, ih, 5);
+      roundRect(cx + (cellW - iw) / 2, cy, iw, ih, 3);
       ctx.clip();
       ctx.drawImage(image, cx + (cellW - iw) / 2, cy, iw, ih);
       ctx.restore();
     } else {
-      ctx.fillStyle = '#D9D9D9';
-      ctx.fillRect(cx + 15, cy, 120, 90);
+      ctx.fillStyle = BORDER;
+      ctx.fillRect(cx + 15, cy, 120, 88);
     }
     const predName = shortName(DATA.names[String(top.class_idx)] || ('class ' + top.class_idx), 13);
     const trueName = shortName(DATA.names[String(entry.true_idx)] || ('class ' + entry.true_idx), 13);
-    text(predName + ' ' + (top.prob * 100).toFixed(1) + '%', cx + cellW / 2, cy + 108, 11, correct ? GREEN : RED, 'center', true);
-    text('真实 ' + trueName, cx + cellW / 2, cy + 124, 9, GRAY, 'center');
-    ctx.fillStyle = '#E6E6E6';
-    roundRect(cx + 14, cy + 138, 110, 7, 3); ctx.fill();
-    ctx.fillStyle = correct ? GREEN : RED;
-    roundRect(cx + 14, cy + 138, Math.max(3, 110 * top.prob), 7, 3); ctx.fill();
+    text(predName + ' ' + oneDecimal(top.prob * 100) + '%', cx + cellW / 2, cy + 108, 10, correct ? GREEN : ROSE, 'center', true);
+    text('TRUE ' + trueName, cx + cellW / 2, cy + 123, 8, MUTED, 'center');
+    ctx.fillStyle = BORDER;
+    roundRect(cx + 14, cy + 137, 110, 5, 2); ctx.fill();
+    ctx.fillStyle = correct ? GREEN : ROSE;
+    roundRect(cx + 14, cy + 137, Math.max(3, 110 * top.prob), 5, 2); ctx.fill();
   }
 }
 
 function draw(t) {
   clear();
+  const start = t < 8 ? 0 : (t < 15 ? 8 : (t < 23 ? 15 : 23));
+  const alpha = start === 0 ? 1 : Math.min(1, (t - start) / 0.18);
+  ctx.save();
+  ctx.globalAlpha = alpha;
+  ctx.translate(0, 4 * (1 - alpha));
   if (t < 8) drawBatch(t);
   else if (t < 15) drawNetwork(t);
   else if (t < 23) drawLoss(t);
   else drawPredictions(t);
+  ctx.restore();
 }
 
 function stageName(t) {
-  if (t < 8) return '分批';
-  if (t < 15) return '一个 batch 穿过网络';
-  if (t < 23) return 'loss 曲线';
-  return '预测演化';
+  if (t < 8) return '01 · BATCHING';
+  if (t < 15) return '02 · FORWARD';
+  if (t < 23) return '03 · LOSS';
+  return '04 · PREDICTION';
 }
 
-function setTime(t) {
+function renderTime(t) {
   currentTime = Math.max(0, Math.min(30, Number(t)));
   draw(currentTime);
-  document.getElementById('seek').value = String(currentTime);
-  document.getElementById('time').textContent = currentTime.toFixed(1) + ' s';
+  const seek = document.getElementById('seek');
+  seek.value = String(currentTime);
+  seek.style.background = 'linear-gradient(to right, #FB923C ' + (currentTime / 30 * 100) + '%, #1E293B ' + (currentTime / 30 * 100) + '%)';
+  document.getElementById('time').textContent = currentTime.toFixed(1) + 's / 30.0s';
   document.getElementById('stage').textContent = stageName(currentTime);
+}
+function setTime(t) {
+  playing = false;
+  renderTime(t);
 }
 window.setTime = setTime;
 
@@ -404,7 +451,7 @@ function tick(timestamp) {
     playing = false;
     document.getElementById('play').textContent = '播放';
   }
-  setTime(next);
+  renderTime(next);
   if (playing) requestAnimationFrame(tick);
 }
 
@@ -414,7 +461,7 @@ function togglePlay() {
     document.getElementById('play').textContent = '播放';
     return;
   }
-  if (currentTime >= 30) setTime(0);
+  if (currentTime >= 30) renderTime(0);
   playing = true;
   lastTimestamp = null;
   document.getElementById('play').textContent = '暂停';
@@ -440,7 +487,7 @@ for (const imageId of DATA.sampleIds) {
   image.src = DATA.images[imageId];
   IMAGES[imageId] = image;
 }
-setTime(0);
+renderTime(0);
 if (window.__ready !== true) {
   window.__ready = loaded === DATA.sampleIds.length;
 }
