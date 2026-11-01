@@ -98,9 +98,9 @@ uv run --no-project --python 3.13 --with matplotlib --with pandas python3 script
 ### 6. 报告与 PPT
 
 ```bash
-uvx --python 3.13 --with python-pptx python3 scripts/build_slides.py
+uvx --python 3.13 --with python-pptx --with matplotlib python3 scripts/build_slides.py
 # 若 uvx 把 python3 解析为版本请求，改用：
-# uv run --no-project --python 3.13 --with python-pptx python3 scripts/build_slides.py
+# uv run --no-project --python 3.13 --with python-pptx --with matplotlib python3 scripts/build_slides.py
 ```
 
 ## 已知坑

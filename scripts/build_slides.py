@@ -1,8 +1,9 @@
-"""生成 14 页 16:9 中文演讲幻灯（阶段 E）。
+"""生成 21 页 16:9 中文演讲幻灯（阶段 E 修订版）。
 
-所有实验数值从 report/results.csv、runs/*/metrics.json、history.csv、
+实验数值从 report/results.csv、runs/*/metrics.json、history.csv、
 per_class.csv、misclassified.csv、data/meta.csv 与 data/class_names.csv 读取；
 公开对比数字来自外部事实，单独置于 PUBLIC_BENCHMARKS。
+公式由 matplotlib mathtext 渲染为透明 PNG；fig7 为卷积示意图。
 """
 
 import csv
@@ -10,6 +11,13 @@ import json
 from collections import Counter
 from pathlib import Path
 
+import matplotlib
+
+matplotlib.use("Agg")
+
+import matplotlib.pyplot as plt
+import numpy as np
+from matplotlib.patches import FancyArrowPatch, Rectangle
 from PIL import Image
 from pptx import Presentation
 from pptx.dml.color import RGBColor
@@ -22,7 +30,9 @@ MODES = ("scratch", "frozen", "two-stage", "strong")
 FONT = "Source Han Sans CN"
 SLIDE_W = 13.333
 SLIDE_H = 7.5
-TOTAL_SLIDES = 14
+TOTAL_SLIDES = 21
+IMAGE_SIZE = 224
+IMAGE_PIXELS = IMAGE_SIZE * IMAGE_SIZE * 3
 
 NAVY = RGBColor(0x1F, 0x38, 0x64)
 ORANGE = RGBColor(0xC5, 0x5A, 0x11)
@@ -30,6 +40,42 @@ GRAY = RGBColor(0x59, 0x59, 0x59)
 LIGHT = RGBColor(0xF2, 0xF2, 0xF2)
 WHITE = RGBColor(0xFF, 0xFF, 0xFF)
 INK = RGBColor(0x26, 0x26, 0x26)
+
+# (LaTeX, 白话解释)；顺序对应 f1..f8
+FORMULAS = [
+    (
+        r"x \in \mathbb{R}^{3\times224\times224}",
+        "一张图就是 3 个通道、224×224 个数字。",
+    ),
+    (
+        r"p_c = \frac{\exp(z_c)}{\sum_k \exp(z_k)}",
+        "分数变成概率：正确类分数越高，概率越大。",
+    ),
+    (
+        r"y_{i,j} = f\left(\sum_{c,k,l} w_{c,k,l}\,x_{c,i+k,j+l}+b\right)",
+        "3×3 小窗口扫过全图，同一组权重反复使用。",
+    ),
+    (
+        r"L = -\sum_c y_c \log p_c",
+        "正确类概率越低，交叉熵罚得越狠。",
+    ),
+    (
+        r"\theta \leftarrow \theta - \eta \nabla_\theta L",
+        "沿让损失变小的方向，挪一小步。",
+    ),
+    (
+        r"\theta_{\mathrm{backbone}} \leftarrow \theta_{\mathrm{ImageNet}}^{*},\;\theta_{\mathrm{head}} \leftarrow \mathrm{random}",
+        "骨干借 ImageNet，分类头重新随机初始化。",
+    ),
+    (
+        r"52{,}326 = 512\times102+102",
+        "只训练分类头：512 维到 102 类。",
+    ),
+    (
+        r"\eta_{\mathrm{head}}=10^{-3},\;\eta_{\mathrm{backbone}}=10^{-4}",
+        "头用大学习率，骨干用小学习率。",
+    ),
+]
 
 # 公开结果：非本实验数据，仅用于量级参照；协议不同，不可直接比较。
 PUBLIC_BENCHMARKS = (
@@ -135,12 +181,10 @@ def load_class_data(root):
         for item in misclassified[:9]
         if item["true_idx"] == camellia_idx and item["pred_idx"] == mallow_idx
     )
-    camellia_row = next(item for item in per_class if item["class_idx"] == camellia_idx)
     return {
         "names": names,
         "worst": worst,
         "largest": largest,
-        "camellia": camellia_row,
         "camellia_mallow": camellia_mallow,
         "top9": misclassified[:9],
     }
@@ -294,6 +338,95 @@ def add_table(slide, headers, rows, x, y, width, height, col_widths):
                     )
 
 
+def render_formula(tex, path):
+    plt.rcParams["mathtext.fontset"] = "stix"
+    fig = plt.figure(figsize=(10, 1.8))
+    fig.patch.set_alpha(0)
+    fig.text(
+        0.5,
+        0.5,
+        f"${tex}$",
+        fontsize=40 if len(tex) < 65 else 32,
+        ha="center",
+        va="center",
+        color="#1F3864",
+    )
+    fig.savefig(
+        path, dpi=200, transparent=True, bbox_inches="tight", pad_inches=0.08
+    )
+    plt.close(fig)
+
+
+def make_fig7(path):
+    plt.rcParams["font.sans-serif"] = [FONT, "DejaVu Sans"]
+    plt.rcParams["axes.unicode_minus"] = False
+    fig, axis = plt.subplots(figsize=(9, 4.8))
+    axis.set_xlim(0, 11)
+    axis.set_ylim(0, 5.2)
+    axis.axis("off")
+    cell = 0.55
+    gap = 0.05
+    for row in range(5):
+        for col in range(5):
+            axis.add_patch(
+                Rectangle(
+                    (0.5 + col * (cell + gap), 1.2 + row * (cell + gap)),
+                    cell,
+                    cell,
+                    facecolor="#DCE6F1",
+                    edgecolor="#1F3864",
+                    linewidth=1.2,
+                )
+            )
+    for row in range(3):
+        for col in range(3):
+            axis.add_patch(
+                Rectangle(
+                    (4.4 + col * (cell + gap), 1.9 + row * (cell + gap)),
+                    cell,
+                    cell,
+                    facecolor="#F4B183",
+                    edgecolor="#C55A11",
+                    linewidth=1.4,
+                )
+            )
+    for row in range(3):
+        for col in range(3):
+            axis.add_patch(
+                Rectangle(
+                    (7.7 + col * (cell + gap), 1.9 + row * (cell + gap)),
+                    cell,
+                    cell,
+                    facecolor="#E2F0D9",
+                    edgecolor="#1F3864",
+                    linewidth=1.2,
+                )
+            )
+    axis.add_patch(
+        FancyArrowPatch(
+            (3.75, 2.55), (4.35, 2.55), arrowstyle="->", color="#C55A11", lw=2.5
+        )
+    )
+    axis.add_patch(
+        FancyArrowPatch(
+            (6.55, 2.55), (7.65, 2.55), arrowstyle="->", color="#C55A11", lw=2.5
+        )
+    )
+    axis.text(1.6, 4.65, "输入 5×5", ha="center", fontsize=15, color="#1F3864")
+    axis.text(5.2, 4.65, "3×3 卷积核", ha="center", fontsize=15, color="#C55A11")
+    axis.text(8.8, 4.65, "输出 3×3", ha="center", fontsize=15, color="#1F3864")
+    axis.text(
+        5.5,
+        0.35,
+        "滑动窗口，共享权重",
+        ha="center",
+        fontsize=15,
+        color="#C55A11",
+    )
+    fig.savefig(path, dpi=200, bbox_inches="tight", facecolor="white")
+    plt.close(fig)
+
+
 def build(root, output):
     results = load_results(root)
     metrics = load_metrics(root)
@@ -323,6 +456,17 @@ def build(root, output):
     )
     frozen_epochs = metrics["frozen"]["run"]["epochs_run"]
     strong_ls = metrics["strong"]["run"]["label_smoothing"]
+
+    figures = root / "report" / "figures"
+    formula_dir = figures / "formulas"
+    formula_dir.mkdir(parents=True, exist_ok=True)
+    formula_paths = []
+    for index, (tex, _plain) in enumerate(FORMULAS, start=1):
+        path = formula_dir / f"f{index}.png"
+        render_formula(tex, path)
+        formula_paths.append(path)
+    fig7 = figures / "fig7_conv.png"
+    make_fig7(fig7)
 
     prs = Presentation()
     prs.slide_width = Inches(SLIDE_W)
@@ -366,9 +510,124 @@ def build(root, output):
         RGBColor(0xBF, 0xBF, 0xBF),
     )
 
-    # 2 问题
+    # 2 计算机眼里的图片
     slide = prs.slides.add_slide(blank)
-    add_header(slide, "从零学认花为什么难", 2)
+    add_header(slide, "计算机眼里的图片", 2)
+    add_image_fit(slide, formula_paths[0], 0.7, 1.2, 12.0, 2.4)
+    add_text(
+        slide,
+        0.8,
+        3.95,
+        11.8,
+        0.6,
+        f"一张 224×224 的彩色图 = {IMAGE_PIXELS:,} 个 0–255 的数字",
+        23,
+        INK,
+        True,
+    )
+    add_bullets(
+        slide,
+        0.8,
+        4.85,
+        11.8,
+        1.7,
+        ["3 个颜色通道：红、绿、蓝", "模型看到的不是花，而是数字矩阵"],
+        18,
+    )
+
+    # 3 神经网络在做什么
+    slide = prs.slides.add_slide(blank)
+    add_header(slide, "神经网络在做什么", 3)
+    add_image_fit(slide, formula_paths[1], 1.1, 1.15, 11.2, 2.3)
+    add_text(
+        slide,
+        0.8,
+        3.95,
+        11.8,
+        0.6,
+        "102 个分数经过 softmax，变成 102 个概率",
+        23,
+        INK,
+        True,
+    )
+    add_bullets(
+        slide,
+        0.8,
+        4.85,
+        11.8,
+        1.7,
+        ["z_c 越大，第 c 类概率越高", "所有类别概率之和等于 1"],
+        18,
+    )
+
+    # 4 卷积
+    slide = prs.slides.add_slide(blank)
+    add_header(slide, "卷积：一个小窗口扫过图片", 4)
+    add_image_fit(slide, formula_paths[2], 0.7, 1.1, 12.0, 1.65)
+    add_image_fit(slide, fig7, 0.4, 2.95, 7.7, 3.9)
+    add_bullets(
+        slide,
+        8.35,
+        3.05,
+        4.4,
+        3.4,
+        ["3×3 窗口在图上滑动", "同一组权重反复使用", "每次算加权和再激活"],
+        17,
+    )
+
+    # 5 交叉熵
+    slide = prs.slides.add_slide(blank)
+    add_header(slide, "怎么知道模型错了", 5)
+    add_image_fit(slide, formula_paths[3], 0.8, 1.2, 11.8, 2.4)
+    add_text(
+        slide,
+        0.8,
+        4.0,
+        11.8,
+        0.6,
+        "正确类概率越低，罚得越狠",
+        24,
+        INK,
+        True,
+    )
+    add_bullets(
+        slide,
+        0.8,
+        4.9,
+        11.8,
+        1.5,
+        ["训练目标：让正确类概率接近 1", "交叉熵越小，模型越自信且正确"],
+        18,
+    )
+
+    # 6 梯度下降
+    slide = prs.slides.add_slide(blank)
+    add_header(slide, "怎么改：梯度下降", 6)
+    add_image_fit(slide, formula_paths[4], 1.2, 1.2, 10.8, 2.4)
+    add_text(
+        slide,
+        0.8,
+        4.0,
+        11.8,
+        0.6,
+        "沿让损失变小的方向，挪一小步",
+        24,
+        INK,
+        True,
+    )
+    add_bullets(
+        slide,
+        0.8,
+        4.9,
+        11.8,
+        1.5,
+        ["η 是步长：太大震荡，太小太慢", "重复：算损失 → 求梯度 → 更新"],
+        18,
+    )
+
+    # 7 为什么不能从零学
+    slide = prs.slides.add_slide(blank)
+    add_header(slide, "为什么不能从零学", 7)
     for x, label, value, note, color in (
         (
             0.75,
@@ -402,9 +661,128 @@ def build(root, output):
         True,
     )
 
-    # 3 数据集
+    # 8 迁移学习
     slide = prs.slides.add_slide(blank)
-    add_header(slide, "数据集与划分", 3)
+    add_header(slide, "迁移学习：借别人学过的「看」的能力", 8)
+    add_image_fit(slide, formula_paths[5], 0.7, 1.15, 12.0, 2.1)
+    add_text(
+        slide,
+        0.8,
+        3.7,
+        11.8,
+        0.7,
+        "预训练：ImageNet 120 万张先学会看边缘、纹理、形状",
+        21,
+        INK,
+        True,
+    )
+    add_bullets(
+        slide,
+        0.8,
+        4.65,
+        11.8,
+        1.5,
+        ["骨干借过来；分类头重新随机初始化", "先在通用视觉上“学会看”，再学认花"],
+        18,
+    )
+
+    # 9 只换最后一层
+    slide = prs.slides.add_slide(blank)
+    add_header(slide, "只换最后一层", 9)
+    add_image_fit(slide, formula_paths[6], 1.2, 1.05, 10.8, 1.55)
+    cards = (
+        (0.75, "总参数", f"{total_params:,}", "ResNet-18"),
+        (4.85, "首阶段可训", f"{trainable:,}", "frozen / two-stage / strong"),
+        (8.95, "可训占比", f"{trainable_pct * 100:.2f}%", "只换 512→102 分类头"),
+    )
+    for x, label, value, note in cards:
+        add_rect(slide, x, 2.9, 3.65, 2.5, LIGHT)
+        add_text(slide, x + 0.3, 3.1, 3.05, 0.4, label, 17, GRAY)
+        add_text(slide, x + 0.3, 3.55, 3.05, 0.7, value, 28, NAVY, True)
+        add_text(slide, x + 0.3, 4.55, 3.05, 0.6, note, 14, INK)
+    add_text(
+        slide,
+        0.8,
+        5.85,
+        11.8,
+        0.5,
+        "骨干保留 ImageNet 权重；分类头把 512 维映射到 102 类",
+        19,
+        INK,
+    )
+
+    # 10 两阶段微调
+    slide = prs.slides.add_slide(blank)
+    add_header(slide, "两阶段微调", 10)
+    add_image_fit(slide, formula_paths[7], 1.0, 1.05, 11.3, 1.55)
+    for y, mode, stages, color in (
+        (2.9, "two-stage", two_stage, NAVY),
+        (4.0, "strong", strong_stage, ORANGE),
+    ):
+        total = stages[0] + stages[1]
+        freeze_w = 10.0 * stages[0] / total
+        add_text(slide, 0.7, y, 1.6, 0.4, mode, 16, color, True)
+        add_rect(slide, 2.25, y + 0.05, freeze_w, 0.5, GRAY)
+        add_rect(slide, 2.25 + freeze_w, y + 0.05, 10.0 - freeze_w, 0.5, color)
+        add_text(
+            slide,
+            2.4,
+            y + 0.1,
+            max(freeze_w - 0.2, 1.0),
+            0.35,
+            f"冻结 {stages[0]}",
+            13,
+            WHITE,
+            True,
+        )
+        add_text(
+            slide,
+            2.25 + freeze_w + 0.2,
+            y + 0.1,
+            4.5,
+            0.35,
+            f"解冻 {stages[1]}",
+            13,
+            WHITE,
+            True,
+        )
+    add_bullets(
+        slide,
+        0.7,
+        5.2,
+        12.0,
+        1.7,
+        ["解冻时重建优化器与 scheduler", "解冻处允许 loss 抖动，不改语义"],
+        17,
+    )
+
+    # 11 数据增强
+    slide = prs.slides.add_slide(blank)
+    add_header(slide, "数据增强", 11)
+    add_text(
+        slide,
+        0.8,
+        1.5,
+        11.8,
+        0.7,
+        "一张图 → 很多张“新图”",
+        28,
+        INK,
+        True,
+    )
+    add_bullets(
+        slide,
+        0.8,
+        2.6,
+        11.8,
+        3.8,
+        ["裁剪：改变构图与尺度", "翻转/旋转：改变方向", "颜色抖动：模拟光照", "本质：让模型见到更多变化"],
+        21,
+    )
+
+    # 12 数据集
+    slide = prs.slides.add_slide(blank)
+    add_header(slide, "数据集与划分", 12)
     add_bullets(
         slide,
         0.7,
@@ -419,9 +797,7 @@ def build(root, output):
         ],
         19,
     )
-    add_image_fit(
-        slide, root / "report" / "figures" / "fig6_split.png", 6.7, 1.2, 6.0, 4.7
-    )
+    add_image_fit(slide, figures / "fig6_split.png", 6.7, 1.2, 6.0, 4.7)
     add_text(
         slide,
         6.7,
@@ -433,9 +809,9 @@ def build(root, output):
         GRAY,
     )
 
-    # 4 四组对照
+    # 13 四组对照
     slide = prs.slides.add_slide(blank)
-    add_header(slide, "四组对照实验", 4)
+    add_header(slide, "四组对照实验", 13)
     cards = (
         (0.7, 1.25, "scratch", "不借：随机初始化，全部参数可训", ORANGE),
         (6.8, 1.25, "frozen", f"借骨干：只训 {trainable:,} 个参数", NAVY),
@@ -465,96 +841,14 @@ def build(root, output):
         6.35,
         12.0,
         0.4,
-        "四组共用同一训练循环、评估口径与产物写出函数",
+        "四组只差在“借多少”：从全随机到全解冻",
         15,
         GRAY,
     )
 
-    # 5 参数
+    # 14 结果表
     slide = prs.slides.add_slide(blank)
-    add_header(slide, "只换最后一层", 5)
-    cards = (
-        (0.75, "总参数", f"{total_params:,}", "ResNet-18"),
-        (4.85, "首阶段可训", f"{trainable:,}", "frozen / two-stage / strong"),
-        (8.95, "可训占比", f"{trainable_pct * 100:.2f}%", "只换 512→102 分类头"),
-    )
-    for x, label, value, note in cards:
-        add_rect(slide, x, 1.6, 3.65, 3.6, LIGHT)
-        add_text(slide, x + 0.3, 1.9, 3.05, 0.4, label, 18, GRAY)
-        add_text(slide, x + 0.3, 2.45, 3.05, 0.9, value, 34, NAVY, True)
-        add_text(slide, x + 0.3, 3.8, 3.05, 0.9, note, 15, INK)
-    add_text(
-        slide,
-        0.8,
-        5.7,
-        11.8,
-        0.5,
-        "骨干保留 ImageNet 权重；分类头把 512 维映射到 102 类",
-        20,
-        INK,
-    )
-
-    # 6 时间线
-    slide = prs.slides.add_slide(blank)
-    add_header(slide, "两阶段时间线", 6)
-    for y, mode, stages, color in (
-        (1.55, "two-stage", two_stage, NAVY),
-        (2.85, "strong", strong_stage, ORANGE),
-    ):
-        total = stages[0] + stages[1]
-        freeze_w = 10.6 * stages[0] / total
-        add_text(slide, 0.7, y, 1.5, 0.4, mode, 16, color, True)
-        add_rect(slide, 2.15, y + 0.05, freeze_w, 0.5, GRAY)
-        add_rect(slide, 2.15 + freeze_w, y + 0.05, 10.6 - freeze_w, 0.5, color)
-        add_text(
-            slide,
-            2.3,
-            y + 0.1,
-            max(freeze_w - 0.2, 1.0),
-            0.35,
-            f"冻结 {stages[0]}",
-            13,
-            WHITE,
-            True,
-        )
-        add_text(
-            slide,
-            2.15 + freeze_w + 0.2,
-            y + 0.1,
-            5.0,
-            0.35,
-            f"解冻 {stages[1]}",
-            13,
-            WHITE,
-            True,
-        )
-    add_bullets(
-        slide,
-        0.7,
-        4.35,
-        12.0,
-        2.2,
-        [
-            "解冻时重建优化器与 scheduler，分类头动量重置",
-            "解冻处允许 loss 抖动，不改预设语义",
-            f"strong 加标签平滑 {strong_ls:.1f} 与更强数据增强",
-        ],
-        18,
-    )
-    add_text(
-        slide,
-        0.7,
-        6.45,
-        12.0,
-        0.35,
-        "BN：首阶段冻结，解冻后恢复训练",
-        14,
-        GRAY,
-    )
-
-    # 7 结果表
-    slide = prs.slides.add_slide(blank)
-    add_header(slide, "四组结果总表", 7)
+    add_header(slide, "结果总表", 14)
     rows = [
         [
             mode,
@@ -585,47 +879,43 @@ def build(root, output):
         GRAY,
     )
 
-    # 8 曲线
+    # 15 曲线
     slide = prs.slides.add_slide(blank)
-    add_header(slide, "训练曲线", 8)
-    add_image_fit(
-        slide, root / "report" / "figures" / "fig1_curves.png", 0.45, 1.05, 12.45, 5.9
-    )
+    add_header(slide, "训练曲线", 15)
+    add_image_fit(slide, figures / "fig1_curves.png", 0.45, 1.05, 12.45, 5.9)
     add_caption(
         slide,
         f"scratch 长期落后：第 12 轮 {pct(epoch12['scratch'])}，frozen {pct(epoch12['frozen'])}",
     )
 
-    # 9 柱状
+    # 16 柱状
     slide = prs.slides.add_slide(blank)
-    add_header(slide, "指标对比", 9)
-    add_image_fit(
-        slide, root / "report" / "figures" / "fig5_bars.png", 0.45, 1.05, 12.45, 5.9
-    )
+    add_header(slide, "指标对比", 16)
+    add_image_fit(slide, figures / "fig5_bars.png", 0.45, 1.05, 12.45, 5.9)
     add_caption(
         slide,
         f"strong {pct(strong_top1)}，two-stage {pct(two_top1)}，相差 {(strong_top1 - two_top1) * 100:.2f} 个百分点",
     )
 
-    # 10 混淆矩阵（左侧色块，图片占大面积）
+    # 17 混淆矩阵
     slide = prs.slides.add_slide(blank)
     add_rect(slide, 0, 0, 4.0, SLIDE_H, NAVY)
-    add_text(slide, 0.4, 0.55, 3.2, 0.8, "混淆矩阵", 28, WHITE, True)
+    add_text(slide, 0.4, 0.55, 3.2, 0.8, "怎么看混淆矩阵", 26, WHITE, True)
     add_text(
         slide,
         0.4,
         1.55,
         3.2,
-        1.4,
-        "two-stage\n102×102\n行归一化\n按对角准确率升序",
-        16,
+        1.7,
+        "two-stage\n102×102\n行 = 真实\n列 = 预测\n对角线越亮越好",
+        15,
         RGBColor(0xD9, 0xD9, 0xD9),
     )
     worst_class = class_data["worst"]
     add_text(
         slide,
         0.4,
-        5.4,
+        5.55,
         3.2,
         1.1,
         f"左上角最差：\n{worst_class['name']} {pct(worst_class['accuracy'])}",
@@ -639,27 +929,23 @@ def build(root, output):
         7.12,
         0.8,
         0.3,
-        "10/14",
+        "17/21",
         11,
         RGBColor(0xBF, 0xBF, 0xBF),
         align=PP_ALIGN.RIGHT,
     )
-    add_image_fit(
-        slide, root / "report" / "figures" / "fig2_cm.png", 4.1, 0.1, 9.1, 7.3
-    )
+    add_image_fit(slide, figures / "fig2_cm.png", 4.1, 0.1, 9.1, 7.3)
 
-    # 11 错例
+    # 18 错例
     slide = prs.slides.add_slide(blank)
-    add_header(slide, "典型错例", 11)
-    add_image_fit(
-        slide, root / "report" / "figures" / "fig3_misclassified.png", 0.35, 1.05, 12.6, 5.65
-    )
+    add_header(slide, "典型错例", 18)
+    add_image_fit(slide, figures / "fig3_misclassified.png", 0.35, 1.05, 12.6, 5.65)
     add_caption(
         slide,
         f"true_prob 最小的 {len(class_data['top9'])} 条中，camellia→mallow 有 {class_data['camellia_mallow']} 条",
     )
 
-    # 12 最差类别（左侧窄色块，图片占大面积）
+    # 19 最差类别
     slide = prs.slides.add_slide(blank)
     add_rect(slide, 0, 0, 2.4, SLIDE_H, NAVY)
     add_text(slide, 0.3, 0.55, 1.9, 0.75, "最差类别", 24, WHITE, True)
@@ -680,17 +966,15 @@ def build(root, output):
         7.12,
         1.8,
         0.3,
-        "12/14",
+        "19/21",
         11,
         RGBColor(0xBF, 0xBF, 0xBF),
     )
-    add_image_fit(
-        slide, root / "report" / "figures" / "fig4_worst_classes.png", 2.45, 0.1, 10.8, 7.3
-    )
+    add_image_fit(slide, figures / "fig4_worst_classes.png", 2.45, 0.1, 10.8, 7.3)
 
-    # 13 公开对比
+    # 20 公开对比
     slide = prs.slides.add_slide(blank)
-    add_header(slide, "公开结果量级", 13)
+    add_header(slide, "公开结果量级", 20)
     public_rows = [
         [name, f"{value:.2f}%", note] for name, value, note in PUBLIC_BENCHMARKS
     ]
@@ -723,9 +1007,9 @@ def build(root, output):
         True,
     )
 
-    # 14 结论与边界
+    # 21 结论与边界
     slide = prs.slides.add_slide(blank)
-    add_header(slide, "结论与边界", 14)
+    add_header(slide, "结论与边界", 21)
     add_text(slide, 0.7, 1.25, 5.6, 0.4, "结论", 20, NAVY, True)
     add_bullets(
         slide,
@@ -782,6 +1066,9 @@ def main():
         1 for slide in prs.slides for shape in slide.shapes if shape.shape_type == 13
     )
     print(f"pictures={pictures}")
+    print("FORMULAS:")
+    for index, (tex, plain) in enumerate(FORMULAS, start=1):
+        print(f"  f{index}: {tex}  |  {plain}")
     return 0
 
 
