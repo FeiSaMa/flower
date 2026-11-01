@@ -43,7 +43,11 @@ Kaggle 训练使用 **script kernel**；`kaggle/flower/` 下为可直接 push �
 
 ## 数据
 
-官方站点 <https://www.robots.ox.ac.uk/~vgg/data/flowers/102/>。
+数据集为 Oxford 102 Category Flower Dataset（Visual Geometry Group, University of Oxford），官方站点 <https://www.robots.ox.ac.uk/~vgg/data/flowers/102/>。
+
+**本仓库不含任何数据集原图**（`data/raw/jpg/` 不入库），只重发布了两个标注文件：`data/raw/imagelabels.mat`（图片标签）与 `data/raw/setid.mat`（train/val/test 划分）。图片按下文「复现步骤 · 1. 补数据」从 Kaggle 镜像或牛津站取回后重建。
+
+重发布这两个标注只为复现性：`data/meta.csv`、`runs/` 与报告里的划分指纹都依赖它们，缺了无法对齐。牛津官方页面未给出明确的标准许可证；若权利人提出异议，会移除这两个文件。
 
 | 项 | 值 |
 |---|---|
